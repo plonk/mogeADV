@@ -1,7 +1,7 @@
 (defparameter *window-w* 640)
 (defparameter *window-h* 480)
 (defparameter *font-name* "Sans")
-(defparameter *font-size* "18")
+(defparameter *font-size* 18)
 (defparameter *font-window* nil)
 (defparameter *select-window* nil)
 
@@ -25,6 +25,7 @@
   (scene 0)
   (next 0) ;;次のシーン
   (game 0) ;;op:
+  (ending nil)
   (select_window nil)
   ;;能力
   (str 0)
@@ -54,6 +55,8 @@
 	   ("知識"       10)
 	   ("信用"       15)
 	   ("言いくるめ"  5)
+	   ("地質学"      1)
+	   ("博物学"     10)
 	   ))
   )
 
@@ -74,5 +77,7 @@
     ("知識"       10)
     ("信用"       15)
     ("言いくるめ"  5)
+    ("地質学"      1)
+    ("博物学"     10)
     ))
 
