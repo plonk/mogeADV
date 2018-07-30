@@ -1,7 +1,7 @@
 (defparameter *window-w* 640)
 (defparameter *window-h* 480)
 (defparameter *font-name* "Sans")
-(defparameter *font-size* "18")
+(defparameter *font-size* 18)
 (defparameter *font-window* nil)
 
 (defparameter *OP* t)
@@ -16,13 +16,7 @@
 (defparameter *font24* (concatenate 'string *font-name* " " "24"))
 
 (defstruct player
-  (text nil) ;;文章
-  (ask nil)  ;;選択肢
-  (ask_skill nil) ;;技能選択肢
   (mogep 0) ;;モゲポイント
-  (tp nil) ;;ターニングポイント
-  (scene 0)
-  (next 0) ;;次のシーン
   (game 0) ;;op:
   ;;能力
   (str 0)
@@ -52,9 +46,9 @@
 	   ("知識"       10)
 	   ("信用"       15)
 	   ("言いくるめ"  5)
-           ("博物学"     10)
-           ("地質学"     10)
-           ("心理学"     10)
+	   ("地質学"      1)
+	   ("博物学"     10)
+	   ("心理学"      5)
 	   ))
   )
 
@@ -75,8 +69,8 @@
     ("知識"       10)
     ("信用"       15)
     ("言いくるめ"  5)
+    ("地質学"      1)
     ("博物学"     10)
-    ("地質学"     10)
-    ("心理学"     10)
+    ("心理学"      5)
     ))
 

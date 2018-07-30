@@ -1,36 +1,7 @@
 
 ;;"フォント名 サイズ"
 (defun make-font-string ()
-  (concatenate 'string *font-name* " " *font-size*))
-
-;;フォントサイズ変更ウィンドウ
-(defun change-font-size (b1)
-  (setf *font-window* t)
-  (let* ((t0 (make-instance 'toplevel  :title "フォント設定"
-				       :on-close t)) ;;ウィンドウ
-	 (m0 (make-instance 'message :master t0 :width 200
-				     :text "フォントサイズ" :font "cica 18"))
-	 (spin1 (make-instance 'spinbox :master t0 :increment 1 :from 6 :to 72
-					:text *font-size*))
-	 (f0 (make-instance 'frame :master t0))
-	 (ok-btn (make-instance 'button :master f0 :text "OK"))
-	 (can-btn (make-instance 'button :master f0 :text "キャンセル")))
-     (set-geometry t0 200 100 (+ 100 (window-x *tk*)) (+ 100 (window-y *tk*)))
-    (setf (command ok-btn)
-          (lambda ()
-            (when (parse-integer (text spin1) :junk-allowed t)
-              (setf *font-size* (text spin1))
-	      (configure b1 :font (make-font-string)))
-	    (destroy t0)))
-    (setf (command can-btn) ;;キャンセルボタン
-	  (lambda () (destroy t0)))
-    (bind t0 "<Destroy>" ;;on-closeをtにしないと動かない
-    	  (lambda (e)
-    	    (declare (ignore e))
-    	    (setf *font-window* nil)))
-
-    (pack (list m0 spin1 f0))
-    (pack (list ok-btn can-btn) :side :left)))
+  (concatenate 'string *font-name* " " (write-to-string *font-size*)))
 
 ;;サイコロ
 (defun dice-100 (f dice me skill-p)
@@ -53,8 +24,8 @@
 	(setf (text l3) "失敗！"))
     (pack (list f2 l3) :side :top)
     (sleep 2)
+    (ltk:process-events) ;; 文章エリアへの先行クリックをここで消費する。
     (destroy f2)
-    ;(ltk:after 2000 (lambda () (destroy f2)))
     (>= skill-p num)))
 
 ;;技能選択ボタン
@@ -81,33 +52,47 @@
 
 	       (pack btn))))))
 
-(defun moge-point-p (p)
-  (let* ((num (car (player-tp p))))
-    (if (>= (player-mogep p) num)
-	(setf (player-scene p) (caadr (player-tp p)))
-	(setf (player-scene p) (cadadr (player-tp p))))))
+;;ゲーム初期化&再スタート
+(defun game-init (p)
+  (loop for ps in (player-skill p)
+	for ini in *init-skill-point*
+	do (setf (cadr ps) (cadr ini)))
+  (setf (player-mogep p) 0))
+
+;;todo
+;;エンディング
+(defun ending (p f)
+  (declare (ignore p))
+  (let* ((f1 (make-instance 'frame :master f))
+	 (btn1 (make-instance 'button :master f1 :text "もう一度プレイする"))
+	 (btn2 (make-instance 'button :master f1  :text "終わる")))
+    (pack (list f1 btn1 btn2))
+    (setf (command btn1)
+          (lambda ()
+            (destroy f1)
+            "hoge"))
+    (setf (command btn2)
+    	  (lambda ()
+    	    (setf *exit-mainloop* t)))
+    ))
 
 ;;ゲーム本編
 (defun game-start (p f)
   (let* ((f1 (make-instance 'frame :master f))
+	 (lf1 (make-instance 'labelframe :master f1 :text "選択肢"))
 	 (lf2 (make-instance 'frame :master f1 :relief :raised
-			     :borderwidth 4))
-
-	 (m0 (make-menubar))
+			     :borderwidth 4)) ;;:text "テキスト"))
 	 (l1 (make-instance 'label :master lf2 :width 640
-				   :wraplength *window-w*
-                                   :anchor :nw
-				   :font (make-font-string)))
+				   :wraplength *window-w* :anchor :nw
+				   :font *font18*))
          (ip 0)
          (curr-op nil)
          (curr-args nil))
 
-    (make-menubutton m0 "Font" (lambda ()
-				 (when (null *font-window*)
-				   (change-font-size l1))))
-
-    (pack (list f1 lf2) :fill :both :expand t)
-    (pack (list l1) :padx 5 :pady 5 :fill :both :expand t)
+    (pack f1 :fill :both :expand t)
+    (pack lf1)
+    (pack lf2 :fill :both :expand t)
+    (pack l1 :padx 5 :pady 5 :fill :both :expand t)
 
     (bind *tk* "<Configure>" ;;ウィンドウサイズ変更
 	  (lambda (e)
@@ -115,6 +100,16 @@
 	    (setf *window-w* (window-width *tk*)
 		  *window-h* (window-height *tk*))
 	    (configure l1 :wraplength (window-width l1))))
+    (bind l1 "<4>" ;;マウスホイール↑
+          (lambda (e)
+            (declare (ignore e))
+            (incf *font-size*)
+            (configure l1 :font (make-font-string))))
+    (bind l1 "<5>" ;;マウスホイール↓
+          (lambda (e)
+            (declare (ignore e))
+            (decf *font-size*)
+            (configure l1 :font (make-font-string))))
 
     (labels ((execute ()
                       (let ((inst (nth ip *text*)))
@@ -140,7 +135,10 @@
                                (if (>= (player-mogep p) threshold)
                                    (jump not-less-label)
                                  (jump less-label))))
-                            (stop)
+                            (end
+                             (let ((btn-frame (make-instance 'frame :master f)))
+                               (pack btn-frame :before lf2)
+                               (ending p btn-frame)))
                             (t
                              (error "unknown op"))))
                          (t
@@ -173,9 +171,7 @@
                             (make-skill-button p btn-frame curr-args #'jump)))
 
              (update-mogep (diff)
-                           (format t "mogep old: ~S~%" (player-mogep p))
                            (incf (player-mogep p) diff)
-                           (format t "mogep new: ~S~%" (player-mogep p))
                            (goto-next))
 
              (jump (label)
@@ -188,6 +184,7 @@
              (goto-next ()
                         (incf ip)
                         (execute)))
+
       (bind l1 "<Button-1>"
             (lambda (e) (declare (ignore e))
               (case curr-op
@@ -210,7 +207,7 @@
 	do (setf (cadr skill) (parse-integer (text num)))))
 
 ;;技能設定
-(defun init-skill (p f)
+(defun skill-point (p f)
   (let* ((btn nil) (ok! t) (defo-num (loop for x in (player-skill p)
 					   sum (cadr x)))
 	 (point 200)
@@ -218,9 +215,9 @@
 	 (f2 (make-instance 'frame :master f1))
 	 (l1 (make-instance 'label :master f1
 				   :text (format nil "好きな技能に初期値〜99の間で200ポイント分振り分けてください~%(初期値未満にはできません)")
-				   :font *font20* :wraplength *window-w*))
+				   :font *font18* :wraplength *window-w*))
 	 (l2 (make-instance 'label :master f1 :text (format nil "残り~dポイント" point)
-				   :font *font20*))
+				   :font *font18*))
 	 (ok-btn (make-instance 'button :master f1 :text "OK")))
     (pack (list f1 l1 l2 f2) :pady  10)
     (loop for s in (player-skill p)
@@ -228,13 +225,12 @@
 	  do (let ((l1 (make-instance 'label :text (car s) :master f2 :font *font18*))
 		   (t1 (make-instance 'spinbox :from (cadr s) :to 99 :increment 1 :font *font18*
 					       :text (format nil "~d" (cadr s))
-					       :master f2 :font *font-size* :width 3)))
+					       :master f2 :width 3)))
 	       (push t1 btn)
 	       (multiple-value-bind (r c)
 		   (floor i 3)
 		 (grid l1 r (* c 2))
 		 (grid t1 r (1+ (* c 2))))))
-
 
     (setf (command ok-btn)
 	  (lambda ()
@@ -258,16 +254,16 @@
 			    (progn (setf ok! nil)
 				   (set-skill-point p (reverse btn))
 				   (destroy f1)
-				   (game-start p f)))))))))
+                                   (game-start p f)))))))))
 
     (pack ok-btn)
     (loop while ok!
 	  do
-	     (if (not (or (find "" btn :test #'equal :key #'(lambda (x) (text x)))
-			  (member nil (mapcar #'(lambda (x) (parse-integer (text x) :junk-allowed t)) btn))))
-		 (setf (text l2) (format nil "残り~dポイント" (- 200 (- (apply #'+ (mapcar #'(lambda (x) (parse-integer (text x) :junk-allowed t)) btn)) defo-num)))))
-	     (sleep 0.1)
-	     (process-events))))
+          (if (not (or (find "" btn :test #'equal :key #'(lambda (x) (text x)))
+                       (member nil (mapcar #'(lambda (x) (parse-integer (text x) :junk-allowed t)) btn))))
+              (setf (text l2) (format nil "残り~dポイント" (- 200 (- (apply #'+ (mapcar #'(lambda (x) (parse-integer (text x) :junk-allowed t)) btn)) defo-num)))))
+          (sleep 0.1)
+          (process-events))))
 
 ;;スタート画面
 (defun start-gamen (p f)
@@ -278,7 +274,7 @@
     (setf (command b1)
 	  (lambda ()
 	    (destroy f1)
-	    (init-skill p f))) ;;技能設定
+            (skill-point p f))) ;;技能設定
     (setf (command b2)
 	  (lambda ()
 	    (setf *exit-mainloop* t)))))
