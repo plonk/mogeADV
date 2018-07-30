@@ -16,7 +16,6 @@
 	 (ok-btn (make-instance 'button :master f0 :text "OK"))
 	 (can-btn (make-instance 'button :master f0 :text "キャンセル")))
      (set-geometry t0 200 100 (+ 100 (window-x *tk*)) (+ 100 (window-y *tk*)))
-     ;;(on-close t0 (lambda () (setf *font-window* nil)))
     (setf (command ok-btn)
           (lambda ()
             (when (parse-integer (text spin1) :junk-allowed t)
@@ -28,24 +27,10 @@
     (bind t0 "<Destroy>" ;;on-closeをtにしないと動かない
     	  (lambda (e)
     	    (declare (ignore e))
-	    ;;(setf (text b1) "にょ！")
     	    (setf *font-window* nil)))
-    
+
     (pack (list m0 spin1 f0))
     (pack (list ok-btn can-btn) :side :left)))
-
-;;シーン切り替わったときテキスト更新
-(defun text-set (p)
-  (let* ((s1 (cadr (assoc (player-scene p) *text*)))
-	 (mp (cadr (assoc 'mogep s1))))
-    (when mp
-      (incf (player-mogep p) mp))
-    (setf (player-text p)      (cadr (assoc 'text s1))
-	  (player-ask p)       (cadr (assoc 'ask s1))
-	  (player-ask_skill p) (cadr (assoc 'skill s1))
-	  (player-tp p)        (cadr (assoc 'tp s1))
-	  (player-next p)      (cadr (assoc 'next s1)))))
-
 
 ;;サイコロ
 (defun dice-100 (f dice me skill-p)
@@ -60,64 +45,41 @@
 	       (pack (list l2 l1) :pady 5)
 	       (loop for i from 0 to 20
 		     do (setf num (1+ (random me)))
-			(setf (text l1) (write-to-string num)) 
+			(setf (text l1) (write-to-string num))
 			(ltk:process-events)
-			(sleep (* 0.1)))))
+			(sleep 0.1))))
     (if (>= skill-p num)
 	(setf (text l3) "成功！")
 	(setf (text l3) "失敗！"))
     (pack (list f2 l3) :side :top)
-    (ltk:after 2000 (lambda () (destroy f2)))
+    (sleep 2)
+    (destroy f2)
+    ;(ltk:after 2000 (lambda () (destroy f2)))
     (>= skill-p num)))
-    ;;(let ((ok-btn (make-instance 'button :text "OK" :master f)))
-    ;;  (pack (list f2 ok-btn)))))
-
-(defun show-text-set-next (p b1)
-  (setf (text b1) (car (player-text p))
-	(player-text p) (cdr (player-text p))))
-
-
-;;普通の選択肢
-(defun make-button (p b1 f btn)
-  (setf (player-select_window p) t)
-  (let ((f1 (make-instance 'frame :master f)))
-    (pack f1)
-    (loop for b in btn
-	  do (let ((btn1 (make-instance 'button :master f1 :text (car b))))
-	       (setf (command btn1)
-		     (lambda ()
-		       (setf (player-select_window p) nil)
-		       (setf (player-scene p) (cadr (assoc (text btn1) btn :test #'equal)))
-		       (text-set p)
-		       (show-text-set-next p b1)
-		       (destroy f1)))
-	       (pack btn1)))))
 
 ;;技能選択ボタン
-(defun make-skill-button (p l1 f btn)
-  (setf (player-select_window p) t)
+(defun make-skill-button (p f skills jump-func)
   (let* ((f1 (make-instance 'frame :master f)))
     (pack f1)
-    (loop for b in btn
-	  do (let* ((skill (car b))
-		    (skill-p (cadr (assoc skill (player-skill p) :test #'equal))) ;;目標値
-		    ;;(n-text (cadr b))
-		    (succ (caadr b)) ;;成功シーン
-		    (fail (cadadr b)) ;;失敗シーン
-		    (btn1 (make-instance 'button :master f1 
-						 :text (format nil "~a:~d" skill skill-p))))
-	       (setf (command btn1)
+    (loop for s in skills
+	  do
+          (destructuring-bind
+              (skill succ-label fail-label)
+              s
+
+            (let* ((skill-p (cadr (assoc skill (player-skill p) :test #'equal))) ;;目標値
+                   (btn (make-instance 'button :master f1
+                                        :text (format nil "~a:~d" skill skill-p))))
+
+	       (setf (command btn)
 		     (lambda ()
 		       (destroy f1)
 		       (if (dice-100 f 1 100 skill-p)
-			   (setf (player-scene p) succ)
-			   (setf (player-scene p) fail))
-		       ;;(setf (player-scene p) (cadr (assoc (text btn1) btn :test #'equal)))
-		       (text-set p)
-		       (setf (player-select_window p) nil)
-		       ;;(setf (text b1) (car (player-text p)))
-		       ))
-	       (pack btn1)))))
+			   (funcall jump-func succ-label)
+			   (funcall jump-func fail-label))
+                       (destroy f)))
+
+	       (pack btn))))))
 
 (defun moge-point-p (p)
   (let* ((num (car (player-tp p))))
@@ -128,49 +90,112 @@
 ;;ゲーム本編
 (defun game-start (p f)
   (let* ((f1 (make-instance 'frame :master f))
-	 (lf1 (make-instance 'labelframe :master f1 :text "選択肢"))
 	 (lf2 (make-instance 'frame :master f1 :relief :raised
-			     :borderwidth 4)) ;;:text "テキスト"))
-	 
+			     :borderwidth 4))
+
 	 (m0 (make-menubar))
 	 (l1 (make-instance 'label :master lf2 :width 640
-				   :wraplength *window-w* :anchor :nw
-				   :font (make-font-string))))
-    (make-menubutton m0 "font" (lambda ()
+				   :wraplength *window-w*
+                                   :anchor :nw
+				   :font (make-font-string)))
+         (ip 0)
+         (curr-op nil)
+         (curr-args nil))
+
+    (make-menubutton m0 "Font" (lambda ()
 				 (when (null *font-window*)
 				   (change-font-size l1))))
-    (text-set p)
-    (show-text-set-next p l1)
-    (pack (list lf1));;:fill :both :expand t)
+
     (pack (list f1 lf2) :fill :both :expand t)
     (pack (list l1) :padx 5 :pady 5 :fill :both :expand t)
+
     (bind *tk* "<Configure>" ;;ウィンドウサイズ変更
 	  (lambda (e)
 	    (declare (ignore e))
 	    (setf *window-w* (window-width *tk*)
 		  *window-h* (window-height *tk*))
-	    (configure l1 :wraplength (1- *window-w*))))
-    (bind l1 "<Button-1>" ;;クリック
-	  (lambda (e)
-	    (declare (ignore e))
-	    (cond
-	      ((null (player-text p)) ;;表示するテキストがなくなった
-	       (when (null (player-select_window p)) ;;選択肢ウィンドウが開いてないとき
-		 (cond
-		   ((player-ask p) ;;普通の選択肢
-		    (make-button p l1 lf1 (player-ask p)))
-		   ((player-ask_skill p) ;;技能選択肢
-		    (make-skill-button p l1 lf1 (player-ask_skill p)))
-		   ((player-tp p) ;;モゲポイントによる分岐
-		    (moge-point-p p)
-		    (text-set p)
-		    (show-text-set-next p l1))
-		   (t ;;次のシーンへ
-		    (setf (player-scene p) (player-next p))
-		    (text-set p)
-		    (show-text-set-next p l1)))))
-	      (t
-	       (show-text-set-next p l1)))))))
+	    (configure l1 :wraplength (window-width l1))))
+
+    (labels ((execute ()
+                      (let ((inst (nth ip *text*)))
+                        (cond
+                         ((integerp inst) (goto-next))
+                         ((null inst) (error "null instruction"))
+                         ((listp inst)
+                          (setf curr-op (car inst) curr-args (cdr inst))
+                          (case curr-op
+                            (text
+                             (show-next-line))
+                            (ask
+                             (show-choices))
+                            (skill
+                             (show-skills))
+                            (mogep
+                             (update-mogep (car curr-args)))
+                            (next
+                             (jump (car curr-args)))
+                            (tp
+                             (destructuring-bind
+                                 (threshold not-less-label less-label) curr-args
+                               (if (>= (player-mogep p) threshold)
+                                   (jump not-less-label)
+                                 (jump less-label))))
+                            (stop)
+                            (t
+                             (error "unknown op"))))
+                         (t
+                          (error "illegal instruction")))))
+             (show-next-line ()
+                             (when (not (eq 'text curr-op)) (error "not executing text"))
+                             (if (null curr-args)
+                                 (goto-next)
+                               (setf (text l1) (car curr-args)
+                                     curr-args (cdr curr-args))))
+
+             (show-choices ()
+                           (when (not (eq 'ask curr-op)) (error "not executing ask"))
+                           (let ((btn-frame (make-instance 'labelframe :master f :text "選択肢")))
+                             (pack btn-frame :before lf2)
+                             (loop for pair in curr-args ;; (string label)
+                                   do
+                                   (let ((btn (make-instance 'button :master btn-frame :text (car pair)))
+                                         (label (cadr pair)))
+                                     (setf (command btn)
+                                           (lambda ()
+                                             (jump label)
+                                             (destroy btn-frame)))
+                                     (pack btn)))))
+
+             (show-skills ()
+                          (when (not (eq 'skill curr-op)) (error "not executing skill"))
+                          (let ((btn-frame (make-instance 'frame :master f)))
+                            (pack btn-frame :before lf2)
+                            (make-skill-button p btn-frame curr-args #'jump)))
+
+             (update-mogep (diff)
+                           (format t "mogep old: ~S~%" (player-mogep p))
+                           (incf (player-mogep p) diff)
+                           (format t "mogep new: ~S~%" (player-mogep p))
+                           (goto-next))
+
+             (jump (label)
+                   (let ((index (position label *text*)))
+                     (when (not index)
+                       (error "jump to nonexistent label"))
+                     (setf ip index)
+                     (execute)))
+
+             (goto-next ()
+                        (incf ip)
+                        (execute)))
+      (bind l1 "<Button-1>"
+            (lambda (e) (declare (ignore e))
+              (case curr-op
+                (text
+                 (show-next-line))
+                (t nil))))
+
+      (execute))))
 
 ;;スピンボックス内の技能ポイント初期化
 (defun init-skill-num (p lst)
@@ -210,7 +235,7 @@
 		 (grid l1 r (* c 2))
 		 (grid t1 r (1+ (* c 2))))))
 
-    
+
     (setf (command ok-btn)
 	  (lambda ()
 	    (let ((num-list (reverse (mapcar #'(lambda (x) (parse-integer (text x) :junk-allowed t)) btn))))
@@ -234,11 +259,10 @@
 				   (set-skill-point p (reverse btn))
 				   (destroy f1)
 				   (game-start p f)))))))))
-		  
+
     (pack ok-btn)
     (loop while ok!
-	  do ;; (setf (text l1)
-	     ;; 	   (format nil "~s" (mapcar #'(lambda (x) (text x)) btn)))
+	  do
 	     (if (not (or (find "" btn :test #'equal :key #'(lambda (x) (text x)))
 			  (member nil (mapcar #'(lambda (x) (parse-integer (text x) :junk-allowed t)) btn))))
 		 (setf (text l2) (format nil "残り~dポイント" (- 200 (- (apply #'+ (mapcar #'(lambda (x) (parse-integer (text x) :junk-allowed t)) btn)) defo-num)))))
@@ -246,7 +270,7 @@
 	     (process-events))))
 
 ;;スタート画面
-(defun start-gamen (p f) 
+(defun start-gamen (p f)
   (let* ((f1 (make-instance 'frame :master f))
 	 (b1 (make-instance 'button :master f1 :text "スタート"))
 	 (b2 (make-instance 'button :master f1 :text "終わる")))
@@ -263,52 +287,9 @@
   (with-ltk ()
     (wm-title *tk* "ほげ！")
     (bind *tk* "<q>" (lambda (e) (declare (ignore e))
-		       (setf *select-window* nil)
 		       (return-from hoge)))
     (set-geometry *tk* *window-w* *window-h* 100 100)
     (let* ((p (make-player))
-	   ;; (f (make-instance 'labelframe :text "ボタン"))
-	   ;; ;;(l1 (make-instance 'label :master f :text "てすと"))
-	   ;; (f0 (make-instance 'labelframe :text "test"))
 	   (f (make-instance 'frame)))
-	   ;; (b1 (make-instance 'label :master f0 :width 640
-	   ;; 			     :wraplength 640 :anchor :nw
-	   ;; 			     :font (make-font-string)
-	   ;; 			     :text "ほげのげ")))
-      ;; (make-menubutton m0 "font" (lambda ()
-      ;; 				   (when (null *font-window*)
-      ;; 				     (change-font-size b1))))
-      ;;(text-set p)
       (pack f :fill :both :expand t)
-      ;;(format t  "hoge~%")
       (start-gamen p f))))
-      
-      ;;(ltk:process-events))))
-;;(init-skill p f)
-      
-      ;; (pack f0 :fill :both :expand t)
-      ;; (pack (list b1) :fill :both :expand 1)
-      ;; (bind *tk* "<Configure>" ;;ウィンドウサイズ変更
-      ;; 	    (lambda (e)
-      ;; 	      (declare (ignore e))
-      ;; 	      (setf *window-w* (window-width *tk*)
-      ;; 		    *window-h* (window-height *tk*))
-      ;; 	      (configure b1 :wraplength *window-w*)))
-      ;; (bind b1 "<Button-1>" ;;クリック
-      ;; 	    (lambda (e)
-      ;; 	      (declare (ignore e))
-      ;; 	      (cond
-      ;; 		((null (player-text p)) ;;表示するテキストがなくなった
-      ;; 		 (when (null (player-select_window p))
-      ;; 		   (cond
-      ;; 		     ((player-ask p)
-      ;; 		      (make-button p b1 f (player-ask p)))
-      ;; 		     ((player-ask_skill p)
-      ;; 		      (make-skill-button p b1 f (player-ask_skill p)))
-      ;; 		     (t
-      ;; 		      (setf (player-scene p) (player-next p))
-      ;; 		      (text-set p)
-      ;; 		      (show-text-set-next p b1)))))
-      ;; 		(t
-      ;; 		 (show-text-set-next p b1))))))))
-
